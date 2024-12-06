@@ -1,5 +1,7 @@
 #!/usr/bin/env python 
 
+import sqlite3
+
 from typing import Sequence
 from typing_extensions import Annotated, TypedDict
 
@@ -15,8 +17,8 @@ from langchain_ollama import OllamaEmbeddings
 from langchain.chains import create_retrieval_chain, create_history_aware_retriever
 from langchain.chains.combine_documents import create_stuff_documents_chain
 
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import START, StateGraph
+from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.graph import START, END, StateGraph
 from langgraph.graph.message import add_messages
 
 
@@ -120,32 +122,35 @@ def call_model(state: State):
         "answer": response["answer"],
     }
 
-# Our graph consists only of one node:
 workflow = StateGraph(state_schema=State)
-workflow.add_edge(START, "model")
 workflow.add_node("model", call_model)
+workflow.add_edge(START, "model")
+workflow.add_edge("model", END)
 
-# TODO: Persist using external database? 
-# Finally, we compile the graph with a checkpointer object.
-# This persists the state, in this case in memory.
-memory = MemorySaver()
-app = workflow.compile(checkpointer=memory)
+# Persist graph in Sqlite database
+db_path = "data/langgraph_memory.db"
+conn = sqlite3.connect(db_path, check_same_thread = False)
+memory = SqliteSaver(conn)
+graph = workflow.compile(checkpointer=memory)
 
-# TODO: Support for multiple users?
 # TODO: async langchain support
-# Each user given a unique thread_id
-config = {"configurable": {"thread_id": "abc123"}}
-
+print("Enter user ID: ", end="")
+user_id = input()
+config = {"configurable": {"thread_id": user_id}}
 while True:
     print("> ", end="")
     qn = input()
     if qn == "\q":
         print("Quit chat.")
         break
-    result = app.invoke({"input": qn}, config=config)
+    result = graph.invoke({"input": qn}, config=config)
     print(result["answer"])
 
-chat_history = app.get_state(config).values["chat_history"]
+# Check chat history of user ID: 1
+# config = {"configurable": {"thread_id": "1"}}
+state = graph.get_state(config)
+
+chat_history = state.values["chat_history"]
 for message in chat_history:
     message.pretty_print()
 
