@@ -1,7 +1,6 @@
 #!/usr/bin/env python 
 
 import sqlite3
-
 from typing import Sequence
 from typing_extensions import Annotated, TypedDict
 
@@ -9,7 +8,7 @@ from langchain_core.messages import (
     BaseMessage, AIMessage, HumanMessage, SystemMessage, trim_messages
 )
 from langchain_core.prompts import PromptTemplate, ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.vectorstores import InMemoryVectorStore
+from langchain_chroma import Chroma
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 from langchain_ollama.llms import OllamaLLM
 from langchain_ollama import OllamaEmbeddings
@@ -35,15 +34,27 @@ md_splitter = MarkdownHeaderTextSplitter(headers_split)
 splits = md_splitter.split_text(info)
 # TODO: Recursive splitting if chunks are too big
 
-# TODO: Persist documents database?
 embeddings = OllamaEmbeddings(model="llama3")
-vectorstore = InMemoryVectorStore.from_documents(
-    documents=splits, embedding=embeddings
+chroma_path = "data/chroma/"
+
+# Create vectorstore
+# vectordb = Chroma.from_documents(
+#     documents=splits,
+#     embedding=embeddings,
+#     persist_directory=chroma_path
+# )
+# print("Vector store generated.")
+
+# Load persisted chromadb
+vectorstore = Chroma(
+    embedding_function=embeddings,
+    persist_directory=chroma_path
 )
-print("Vector store generated.")
+print("Vector store loaded.")
 
 ##### Retrieval #####
-# TODO: Experiment with more retrievers
+# TODO: Check below how to change the number of k returned
+# TODO: Similarity search algorithm?
 retriever = vectorstore.as_retriever()
 llm = OllamaLLM(model="llama3")
 # Use LLM to rephrase question using chat history as context
@@ -128,8 +139,8 @@ workflow.add_edge(START, "model")
 workflow.add_edge("model", END)
 
 # Persist graph in Sqlite database
-db_path = "data/langgraph_memory.db"
-conn = sqlite3.connect(db_path, check_same_thread = False)
+sqlite_path = "data/langgraph_memory.db"
+conn = sqlite3.connect(sqlite_path, check_same_thread = False)
 memory = SqliteSaver(conn)
 graph = workflow.compile(checkpointer=memory)
 

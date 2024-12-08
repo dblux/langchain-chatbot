@@ -1,0 +1,6 @@
+langchain
+langchain-chroma
+langchain-ollama
+langgraph
+langgraph-checkpoint-sqlite
+sqlite
