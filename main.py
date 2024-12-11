@@ -78,9 +78,13 @@ history_aware_retriever = create_history_aware_retriever(
 )
 
 ##### Q&A #####
-docpath = "data/system_prompt.txt"
-with open(docpath, "r") as file:
-    system_prompt = file.read()
+system_prompt = (
+    "You are Alex, a tyre salesperson from KT Tyres. "
+    "Use the following pieces of information to answer the question at the end. "
+    "If you don't know the answer, just say that you don't know. "
+    "Keep the answer as concise as possible.\n"
+    "{context}"
+)
 
 # System prompt requires provison of context
 prompt = ChatPromptTemplate.from_messages([
@@ -115,15 +119,18 @@ class State(TypedDict):
     context: str
     answer: str
 
-# We then define a simple node that runs the `rag_chain`.
-# The `return` values of the node update the graph state, so here we just
-# update the chat history with the input message and response.
+# Define node in LangGraph, return values are used to update state
 def call_model(state: State):
     trimmed_history = trimmer.invoke(state["chat_history"])
-    # TODO: Check whether to update chat_history in this way
-    # TODO: Solution: incorporate trimmer before LLM by implementing custom rag chain
-    state["chat_history"] = trimmed_history
-    response = rag_chain.invoke(state)
+    # Trim chat history in state
+    # state["chat_history"] = trimmed_history
+    # response = rag_chain.invoke(state)
+    # Chat history is trimmed before being fed to LLM. State still holds entire
+    # chat history.
+    response = rag_chain.invoke({
+        "input": state["input"],
+        "chat_history": trimmed_history
+    })
     return {
         "chat_history": [
             HumanMessage(state["input"]),
@@ -140,30 +147,36 @@ workflow.add_edge("model", END)
 
 # Persist graph in Sqlite database
 sqlite_path = "data/langgraph_memory.db"
-conn = sqlite3.connect(sqlite_path, check_same_thread = False)
+conn = sqlite3.connect(sqlite_path, check_same_thread=False)
 memory = SqliteSaver(conn)
 graph = workflow.compile(checkpointer=memory)
 
 # TODO: async langchain support
-print("Enter user ID: ", end="")
-user_id = input()
+if __name__ == "__main__":
+    print("Enter user ID: ", end="")
+    user_id = input()
+    config = {"configurable": {"thread_id": user_id}}
+    while True:
+        print("> ", end="")
+        qn = input()
+        if qn == "\q":
+            print("Quit chat.")
+            break
+        result = graph.invoke({"input": qn}, config=config)
+        print(result["answer"])
+
+
+# Manual input
+user_id = "1"
 config = {"configurable": {"thread_id": user_id}}
-while True:
-    print("> ", end="")
-    qn = input()
-    if qn == "\q":
-        print("Quit chat.")
-        break
-    result = graph.invoke({"input": qn}, config=config)
-    print(result["answer"])
+
+qn = "what's my name?"
+result = graph.invoke({"input": qn}, config=config)
+print(result)
 
 # Check chat history of user ID: 1
 # config = {"configurable": {"thread_id": "1"}}
 state = graph.get_state(config)
-
 chat_history = state.values["chat_history"]
 for message in chat_history:
     message.pretty_print()
-
-# TODO: Visualisation using LangSmith
-# TODO: LangChain Runnables and LCEL
