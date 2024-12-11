@@ -1,6 +1,7 @@
-sqlite
 langchain
-langgraph
 langchain-chroma
 langchain-ollama
+langgraph
 langgraph-checkpoint-sqlite
+python-dotenv
+sqlite

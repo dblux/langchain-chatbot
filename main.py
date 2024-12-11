@@ -3,6 +3,7 @@
 import sqlite3
 from typing import Sequence
 from typing_extensions import Annotated, TypedDict
+from dotenv import load_dotenv
 
 from langchain_core.messages import (
     BaseMessage, AIMessage, HumanMessage, SystemMessage, trim_messages
@@ -21,6 +22,8 @@ from langgraph.graph import START, END, StateGraph
 from langgraph.graph.message import add_messages
 
 
+# Log trace to LangSmith
+load_dotenv()
 ##### Documents #####
 docpath = "data/info.md"
 with open(docpath, "r") as file:
