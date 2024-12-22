@@ -1,9 +1,9 @@
 #!/usr/bin/env python 
 
 import sqlite3
+from dotenv import load_dotenv
 from typing import Sequence
 from typing_extensions import Annotated, TypedDict
-from dotenv import load_dotenv
 
 from langchain_core.messages import (
     BaseMessage, AIMessage, HumanMessage, SystemMessage, trim_messages
@@ -24,6 +24,7 @@ from langgraph.graph.message import add_messages
 
 # Log trace to LangSmith
 load_dotenv()
+
 ##### Documents #####
 docpath = "data/info.md"
 with open(docpath, "r") as file:
@@ -56,10 +57,11 @@ vectorstore = Chroma(
 print("Vector store loaded.")
 
 ##### Retrieval #####
-# TODO: Check below how to change the number of k returned
-# TODO: Similarity search algorithm?
-retriever = vectorstore.as_retriever()
+retriever = vectorstore.as_retriever(
+    search_type="mmr", search_kwargs={"k": 3}
+)
 llm = OllamaLLM(model="llama3")
+
 # Use LLM to rephrase question using chat history as context
 # Rephrased query used to retrieve relevant document chunks
 contextualize_qn_system_prompt = (
@@ -103,7 +105,7 @@ qa_chain = create_stuff_documents_chain(llm, prompt)
 rag_chain = create_retrieval_chain(history_aware_retriever, qa_chain)
 
 # Trim chat history
-ctx_size = 2048 
+ctx_size = 200
 trimmer = trim_messages(
     max_tokens=ctx_size,
     strategy="last",
