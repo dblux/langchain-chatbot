@@ -1,5 +1,6 @@
 #!/usr/bin/env python 
 
+import os
 import sqlite3
 from dotenv import load_dotenv
 from typing import Sequence
@@ -12,7 +13,7 @@ from langchain_core.prompts import PromptTemplate, ChatPromptTemplate, MessagesP
 from langchain_chroma import Chroma
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 from langchain_ollama.llms import OllamaLLM
-from langchain_ollama import OllamaEmbeddings
+from langchain_ollama import ChatOllama, OllamaEmbeddings
 
 from langchain.chains import create_retrieval_chain, create_history_aware_retriever
 from langchain.chains.combine_documents import create_stuff_documents_chain
@@ -24,8 +25,13 @@ from langgraph.graph.message import add_messages
 
 # Log trace to LangSmith
 load_dotenv()
+os.environ["LANGCHAIN_PROJECT"] = "sales-assistant"
+
+ctx_size = 2000
+model = "qwen2.5:14b"
 
 ##### Documents #####
+
 docpath = "data/info.md"
 with open(docpath, "r") as file:
     info = file.read()
@@ -38,16 +44,16 @@ md_splitter = MarkdownHeaderTextSplitter(headers_split)
 splits = md_splitter.split_text(info)
 # TODO: Recursive splitting if chunks are too big
 
-embeddings = OllamaEmbeddings(model="llama3")
+embeddings = OllamaEmbeddings(model=model)
 chroma_path = "data/chroma/"
 
 # Create vectorstore
-# vectordb = Chroma.from_documents(
-#     documents=splits,
-#     embedding=embeddings,
-#     persist_directory=chroma_path
-# )
-# print("Vector store generated.")
+vectordb = Chroma.from_documents(
+    documents=splits,
+    embedding=embeddings,
+    persist_directory=chroma_path
+)
+print("Vector store generated.")
 
 # Load persisted chromadb
 vectorstore = Chroma(
@@ -58,9 +64,9 @@ print("Vector store loaded.")
 
 ##### Retrieval #####
 retriever = vectorstore.as_retriever(
-    search_type="mmr", search_kwargs={"k": 3}
+    search_type="mmr", search_kwargs={"k": 3, "n_results": 3}
 )
-llm = OllamaLLM(model="llama3")
+llm = ChatOllama(model=model)
 
 # Use LLM to rephrase question using chat history as context
 # Rephrased query used to retrieve relevant document chunks
@@ -105,7 +111,6 @@ qa_chain = create_stuff_documents_chain(llm, prompt)
 rag_chain = create_retrieval_chain(history_aware_retriever, qa_chain)
 
 # Trim chat history
-ctx_size = 200
 trimmer = trim_messages(
     max_tokens=ctx_size,
     strategy="last",
@@ -116,8 +121,7 @@ trimmer = trim_messages(
 )
 
 ##### LangGraph #####
-# Dictionary representing state of the application
-# State has the same input and output keys as `rag_chain`
+
 class State(TypedDict):
     input: str
     chat_history: Annotated[Sequence[BaseMessage], add_messages]
@@ -171,17 +175,17 @@ if __name__ == "__main__":
         print(result["answer"])
 
 
-# Manual input
-user_id = "1"
-config = {"configurable": {"thread_id": user_id}}
-
-qn = "what's my name?"
-result = graph.invoke({"input": qn}, config=config)
-print(result)
-
-# Check chat history of user ID: 1
-# config = {"configurable": {"thread_id": "1"}}
-state = graph.get_state(config)
-chat_history = state.values["chat_history"]
-for message in chat_history:
-    message.pretty_print()
+# # Manual input
+# user_id = "1"
+# config = {"configurable": {"thread_id": user_id}}
+# 
+# qn = "what's my name?"
+# result = graph.invoke({"input": qn}, config=config)
+# print(result)
+# 
+# # Check chat history of user ID: 1
+# # config = {"configurable": {"thread_id": "1"}}
+# state = graph.get_state(config)
+# chat_history = state.values["chat_history"]
+# for message in chat_history:
+#     message.pretty_print()
